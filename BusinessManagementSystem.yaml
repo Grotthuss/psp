@@ -1,0 +1,1881 @@
+openapi: 3.0.3
+info:
+  title: Business Management System API
+  version: "2.0.0"
+  description: |
+    API contract for a unified point-of-sale and reservation management system
+    designed for small and medium businesses in catering and beauty industries.
+    
+    This API is strictly aligned 1:1 with the data model diagram.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Orders
+    description: Order creation, modification, payment, and refund operations
+  - name: Reservations
+    description: Appointment booking and management
+  - name: Catalog
+    description: Catalog management for items
+  - name: Inventory
+    description: Stock tracking and movement management
+  - name: Taxes
+    description: Tax class and rate configuration per country
+  - name: Users
+    description: Employee management
+  - name: Business
+    description: Business/merchant configuration
+  - name: Gift Cards
+    description: Gift card issuance and balance management
+  - name: Discounts
+    description: Discount and promotion management
+  - name: Authentication
+    description: Login and session management
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    # Common schemas
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: "Invalid request parameters"
+        details:
+          type: array
+          items:
+            type: string
+      required: [code, message]
+
+    Money:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: decimal
+          example: 19.99
+        currency:
+          type: string
+          example: "EUR"
+      required: [amount, currency]
+
+    # Tenancy
+    Business:
+      type: object
+      properties:
+        businessId:
+          type: integer
+        name:
+          type: string
+          example: "Bella Beauty Salon"
+        address:
+          type: string
+          example: "Vilnius, Gedimino pr. 1"
+        phone:
+          type: string
+          example: "+37060000000"
+        email:
+          type: string
+          format: email
+          example: "info@bella.lt"
+        countryCode:
+          type: string
+          example: "LT"
+        priceIncludesTax:
+          type: boolean
+          example: true
+      required: [businessId, name, address, phone, email, countryCode, priceIncludesTax]
+
+    Employee:
+      type: object
+      properties:
+        employeeId:
+          type: integer
+        businessId:
+          type: integer
+        name:
+          type: string
+          example: "Jonas Jonaitis"
+        role:
+          type: string
+          enum: [Owner, Manager, Staff]
+        status:
+          type: string
+          enum: [Active, OnLeave, Terminated]
+          example: "Active"
+      required: [employeeId, businessId, name, role, status]
+
+    # Catalog & Tax
+    CatalogItem:
+      type: object
+      properties:
+        catalogItemId:
+          type: integer
+        businessId:
+          type: integer
+        name:
+          type: string
+          example: "Haircut"
+        code:
+          type: string
+          example: "SVC-001"
+        type:
+          type: string
+          enum: [Product, Service]
+          example: "Service"
+        basePrice:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [Draft, Active, Archived]
+          example: "Active"
+        defaultDurationMin:
+          type: integer
+          nullable: true
+          example: 60
+        taxClass:
+          type: string
+          enum: [Food, Service, Alcohol, Other]
+          example: "Service"
+      required: [catalogItemId, businessId, name, code, type, basePrice, status, taxClass]
+
+    TaxRule:
+      type: object
+      properties:
+        taxRuleId:
+          type: integer
+        countryCode:
+          type: string
+          example: "LT"
+        taxClass:
+          type: string
+          enum: [Food, Service, Alcohol, Other]
+          example: "Service"
+        ratePercent:
+          type: number
+          format: decimal
+          example: 21.0
+        validFrom:
+          type: string
+          format: date
+          example: "2024-01-01"
+        validTo:
+          type: string
+          format: date
+          nullable: true
+          example: null
+      required: [taxRuleId, countryCode, taxClass, ratePercent, validFrom]
+
+    # Discounts
+    Discount:
+      type: object
+      properties:
+        discountId:
+          type: integer
+        businessId:
+          type: integer
+        code:
+          type: string
+          example: "SUMMER2024"
+        type:
+          type: string
+          enum: [Percent, Amount]
+          example: "Percent"
+        scope:
+          type: string
+          enum: [Order, Line]
+          example: "Order"
+        value:
+          type: number
+          format: decimal
+          example: 10.0
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [Active, Inactive]
+          example: "Active"
+      required: [discountId, businessId, code, type, scope, value, startsAt, endsAt, status]
+
+    DiscountEligibility:
+      type: object
+      properties:
+        discountEligibilityId:
+          type: integer
+        discountId:
+          type: integer
+        catalogItemId:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [discountEligibilityId, discountId, catalogItemId, createdAt]
+
+    # Orders & Payments
+    Order:
+      type: object
+      properties:
+        orderId:
+          type: integer
+        businessId:
+          type: integer
+        createdById:
+          type: integer
+          description: "Employee who created the order"
+        status:
+          type: string
+          enum: [Open, Closed, Cancelled, Refunded]
+        tableOrArea:
+          type: string
+          nullable: true
+          example: "Table 5"
+        createdAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tipAmount:
+          $ref: '#/components/schemas/Money'
+        orderDiscountSnapshot:
+          type: string
+          nullable: true
+        discountId:
+          type: integer
+          nullable: true
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+      required: [orderId, businessId, createdById, status, createdAt, tipAmount]
+
+    OrderLine:
+      type: object
+      properties:
+        orderLineId:
+          type: integer
+        orderId:
+          type: integer
+        catalogItemId:
+          type: integer
+        stockItemId:
+          type: integer
+          nullable: true
+        itemNameSnapshot:
+          type: string
+          example: "Haircut"
+        qty:
+          type: number
+          format: decimal
+          example: 1
+        unitPriceSnapshot:
+          $ref: '#/components/schemas/Money'
+        unitDiscountSnapshot:
+          type: string
+          nullable: true
+        taxClassSnapshot:
+          type: string
+          example: "Service"
+        taxRateSnapshotPct:
+          type: number
+          format: decimal
+          example: 21.0
+        performedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [orderLineId, orderId, catalogItemId, itemNameSnapshot, qty, unitPriceSnapshot, taxClassSnapshot, taxRateSnapshotPct]
+
+    Payment:
+      type: object
+      properties:
+        paymentId:
+          type: integer
+        orderId:
+          type: integer
+        employeeId:
+          type: integer
+        giftCardId:
+          type: integer
+          nullable: true
+        amount:
+          $ref: '#/components/schemas/Money'
+        method:
+          type: string
+          enum: [Cash, CardDebit, CardCredit, GiftCard]
+        tipPortion:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [paymentId, orderId, employeeId, amount, method, createdAt]
+
+    # Gift Cards
+    GiftCard:
+      type: object
+      properties:
+        giftCardId:
+          type: integer
+        businessId:
+          type: integer
+        code:
+          type: string
+          example: "GIFT-2025-ABCD1234"
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        initialValue:
+          $ref: '#/components/schemas/Money'
+        balance:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [Active, Blocked, Expired]
+          example: "Active"
+      required: [giftCardId, businessId, code, issuedAt, expiresAt, initialValue, balance, status]
+
+    # Reservations
+    Reservation:
+      type: object
+      properties:
+        reservationId:
+          type: integer
+        businessId:
+          type: integer
+        catalogItemId:
+          type: integer
+        employeeId:
+          type: integer
+          nullable: true
+        orderId:
+          type: integer
+          nullable: true
+        bookedAt:
+          type: string
+          format: date-time
+        appointmentStart:
+          type: string
+          format: date-time
+          example: "2025-10-05T14:00:00Z"
+        appointmentEnd:
+          type: string
+          format: date-time
+          example: "2025-10-05T15:00:00Z"
+        plannedDurationMin:
+          type: integer
+          example: 60
+        status:
+          type: string
+          enum: [Booked, Cancelled, Completed]
+        notes:
+          type: string
+          nullable: true
+        tableOrArea:
+          type: string
+          nullable: true
+      required: [reservationId, businessId, catalogItemId, bookedAt, appointmentStart, appointmentEnd, plannedDurationMin, status]
+
+    # Inventory
+    StockItem:
+      type: object
+      properties:
+        stockItemId:
+          type: integer
+        catalogItemId:
+          type: integer
+        unit:
+          type: string
+          enum: [pcs, ml, g]
+          example: "pcs"
+        qtyOnHand:
+          type: number
+          format: decimal
+          example: 100.0
+        averageUnitCost:
+          $ref: '#/components/schemas/Money'
+      required: [stockItemId, catalogItemId, unit, qtyOnHand, averageUnitCost]
+
+    StockMovement:
+      type: object
+      properties:
+        stockMovementId:
+          type: integer
+        stockItemId:
+          type: integer
+        orderLineId:
+          type: integer
+          nullable: true
+        type:
+          type: string
+          enum: [Receive, Sale, RefundReturn, Waste, Adjust]
+        delta:
+          type: number
+          format: decimal
+          example: -5.0
+        unitCostSnapshot:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        at:
+          type: string
+          format: date-time
+      required: [stockMovementId, stockItemId, type, delta, at]
+
+paths:
+  # Authentication
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate employee and receive JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                employeeId:
+                  type: integer
+                password:
+                  type: string
+                  format: password
+              required: [employeeId, password]
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  employee:
+                    $ref: '#/components/schemas/Employee'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Invalidate current session token
+      responses:
+        '200':
+          description: Logout successful
+        '401':
+          description: Unauthorized
+
+  # Business
+  /businesses:
+    get:
+      tags:
+        - Business
+      summary: List businesses
+      description: List all businesses (filtered by permissions)
+      responses:
+        '200':
+          description: List of businesses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Business'
+
+    post:
+      tags:
+        - Business
+      summary: Create a business
+      description: Register a new merchant/business
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                address:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                countryCode:
+                  type: string
+                priceIncludesTax:
+                  type: boolean
+              required: [name, address, phone, email, countryCode, priceIncludesTax]
+      responses:
+        '201':
+          description: Business created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+
+  /businesses/{businessId}:
+    get:
+      tags:
+        - Business
+      summary: Get business by ID
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Business details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        '404':
+          description: Business not found
+
+    put:
+      tags:
+        - Business
+      summary: Update business details
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                address:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                priceIncludesTax:
+                  type: boolean
+      responses:
+        '200':
+          description: Business updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+
+  # Employees
+  /employees:
+    get:
+      tags:
+        - Users
+      summary: List employees
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [Owner, Manager, Staff]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, OnLeave, Terminated]
+      responses:
+        '200':
+          description: List of employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Employee'
+
+    post:
+      tags:
+        - Users
+      summary: Create an employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [Owner, Manager, Staff]
+                password:
+                  type: string
+                  format: password
+              required: [businessId, name, role, password]
+      responses:
+        '201':
+          description: Employee created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+
+  /employees/{employeeId}:
+    get:
+      tags:
+        - Users
+      summary: Get employee by ID
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Employee details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '404':
+          description: Employee not found
+
+    put:
+      tags:
+        - Users
+      summary: Update an employee
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [Owner, Manager, Staff]
+                status:
+                  type: string
+                  enum: [Active, OnLeave, Terminated]
+      responses:
+        '200':
+          description: Employee updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+
+    delete:
+      tags:
+        - Users
+      summary: Delete an employee
+      description: Marks employee as Terminated
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Employee deleted
+
+  # Tax Rules
+  /tax-rules:
+    get:
+      tags:
+        - Taxes
+      summary: List tax rules
+      parameters:
+        - name: countryCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: taxClass
+          in: query
+          schema:
+            type: string
+            enum: [Food, Service, Alcohol, Other]
+      responses:
+        '200':
+          description: List of tax rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaxRule'
+
+    post:
+      tags:
+        - Taxes
+      summary: Create a tax rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                countryCode:
+                  type: string
+                taxClass:
+                  type: string
+                  enum: [Food, Service, Alcohol, Other]
+                ratePercent:
+                  type: number
+                  format: decimal
+                validFrom:
+                  type: string
+                  format: date
+                validTo:
+                  type: string
+                  format: date
+                  nullable: true
+              required: [countryCode, taxClass, ratePercent, validFrom]
+      responses:
+        '201':
+          description: Tax rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxRule'
+
+  # Catalog Items
+  /catalog-items:
+    get:
+      tags:
+        - Catalog
+      summary: List catalog items
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [Product, Service]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Draft, Active, Archived]
+      responses:
+        '200':
+          description: List of catalog items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogItem'
+
+    post:
+      tags:
+        - Catalog
+      summary: Create a catalog item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                name:
+                  type: string
+                code:
+                  type: string
+                type:
+                  type: string
+                  enum: [Product, Service]
+                basePrice:
+                  $ref: '#/components/schemas/Money'
+                defaultDurationMin:
+                  type: integer
+                  nullable: true
+                taxClass:
+                  type: string
+                  enum: [Food, Service, Alcohol, Other]
+              required: [businessId, name, code, type, basePrice, taxClass]
+      responses:
+        '201':
+          description: Catalog item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogItem'
+
+  /catalog-items/{catalogItemId}:
+    get:
+      tags:
+        - Catalog
+      summary: Get catalog item by ID
+      parameters:
+        - name: catalogItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Catalog item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogItem'
+        '404':
+          description: Catalog item not found
+
+    put:
+      tags:
+        - Catalog
+      summary: Update a catalog item
+      parameters:
+        - name: catalogItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                basePrice:
+                  $ref: '#/components/schemas/Money'
+                status:
+                  type: string
+                  enum: [Draft, Active, Archived]
+                defaultDurationMin:
+                  type: integer
+                  nullable: true
+                taxClass:
+                  type: string
+                  enum: [Food, Service, Alcohol, Other]
+      responses:
+        '200':
+          description: Catalog item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogItem'
+
+    delete:
+      tags:
+        - Catalog
+      summary: Archive a catalog item
+      description: Marks item status as Archived
+      parameters:
+        - name: catalogItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Catalog item archived
+
+  # Discounts
+  /discounts:
+    get:
+      tags:
+        - Discounts
+      summary: List discounts
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, Inactive]
+      responses:
+        '200':
+          description: List of discounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Discount'
+
+    post:
+      tags:
+        - Discounts
+      summary: Create a discount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                code:
+                  type: string
+                type:
+                  type: string
+                  enum: [Percent, Amount]
+                scope:
+                  type: string
+                  enum: [Order, Line]
+                value:
+                  type: number
+                  format: decimal
+                startsAt:
+                  type: string
+                  format: date-time
+                endsAt:
+                  type: string
+                  format: date-time
+              required: [businessId, code, type, scope, value, startsAt, endsAt]
+      responses:
+        '201':
+          description: Discount created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discount'
+
+  /discounts/{discountId}:
+    get:
+      tags:
+        - Discounts
+      summary: Get discount by ID
+      parameters:
+        - name: discountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Discount details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discount'
+        '404':
+          description: Discount not found
+
+    put:
+      tags:
+        - Discounts
+      summary: Update a discount
+      parameters:
+        - name: discountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                type:
+                  type: string
+                  enum: [Percent, Amount]
+                scope:
+                  type: string
+                  enum: [Order, Line]
+                value:
+                  type: number
+                  format: decimal
+                startsAt:
+                  type: string
+                  format: date-time
+                endsAt:
+                  type: string
+                  format: date-time
+                status:
+                  type: string
+                  enum: [Active, Inactive]
+      responses:
+        '200':
+          description: Discount updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discount'
+
+    delete:
+      tags:
+        - Discounts
+      summary: Delete a discount
+      parameters:
+        - name: discountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Discount deleted
+
+  /discounts/{discountId}/eligibility:
+    get:
+      tags:
+        - Discounts
+      summary: List discount eligibility rules
+      parameters:
+        - name: discountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of discount eligibility rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DiscountEligibility'
+
+    post:
+      tags:
+        - Discounts
+      summary: Add catalog item to discount eligibility
+      parameters:
+        - name: discountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                catalogItemId:
+                  type: integer
+              required: [catalogItemId]
+      responses:
+        '201':
+          description: Eligibility rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscountEligibility'
+
+  # Inventory
+  /stock-items:
+    get:
+      tags:
+        - Inventory
+      summary: List stock items
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: catalogItemId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of stock items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockItem'
+
+    post:
+      tags:
+        - Inventory
+      summary: Create a stock item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                catalogItemId:
+                  type: integer
+                unit:
+                  type: string
+                  enum: [pcs, ml, g]
+                qtyOnHand:
+                  type: number
+                  format: decimal
+                averageUnitCost:
+                  $ref: '#/components/schemas/Money'
+              required: [catalogItemId, unit, qtyOnHand, averageUnitCost]
+      responses:
+        '201':
+          description: Stock item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+
+  /stock-items/{stockItemId}:
+    get:
+      tags:
+        - Inventory
+      summary: Get stock item by ID
+      parameters:
+        - name: stockItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Stock item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+        '404':
+          description: Stock item not found
+
+  /stock-items/{stockItemId}/movements:
+    get:
+      tags:
+        - Inventory
+      summary: List stock movements for an item
+      parameters:
+        - name: stockItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [Receive, Sale, RefundReturn, Waste, Adjust]
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of stock movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockMovement'
+
+    post:
+      tags:
+        - Inventory
+      summary: Create a stock movement
+      description: Record a stock movement
+      parameters:
+        - name: stockItemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [Receive, Sale, RefundReturn, Waste, Adjust]
+                delta:
+                  type: number
+                  format: decimal
+                unitCostSnapshot:
+                  $ref: '#/components/schemas/Money'
+                  nullable: true
+                orderLineId:
+                  type: integer
+                  nullable: true
+              required: [type, delta]
+      responses:
+        '201':
+          description: Stock movement created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovement'
+
+  # Orders
+  /orders:
+    post:
+      tags:
+        - Orders
+      summary: Create a new order
+      description: Creates a new order with initial order lines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                createdById:
+                  type: integer
+                tableOrArea:
+                  type: string
+                  nullable: true
+                discountId:
+                  type: integer
+                  nullable: true
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      catalogItemId:
+                        type: integer
+                      qty:
+                        type: number
+                        format: decimal
+                      performedAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                    required: [catalogItemId, qty]
+              required: [businessId, createdById, lines]
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags:
+        - Orders
+      summary: List orders
+      description: Retrieve orders for a business with optional filtering
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Open, Closed, Cancelled, Refunded]
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: createdById
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+
+  /orders/{orderId}:
+    get:
+      tags:
+        - Orders
+      summary: Get order by ID
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: Order not found
+
+    patch:
+      tags:
+        - Orders
+      summary: Modify an open order
+      description: Add, remove, or update order lines. Only works for orders with status "Open"
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                discountId:
+                  type: integer
+                  nullable: true
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      orderLineId:
+                        type: integer
+                        nullable: true
+                      catalogItemId:
+                        type: integer
+                      qty:
+                        type: number
+                        format: decimal
+                      performedAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      delete:
+                        type: boolean
+      responses:
+        '200':
+          description: Order updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Validation error
+        '403':
+          description: Cannot modify closed/paid order
+        '404':
+          description: Order not found
+
+    delete:
+      tags:
+        - Orders
+      summary: Cancel an open order
+      description: Marks order as cancelled. Only works for unpaid/open orders
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '403':
+          description: Cannot cancel closed/paid order
+        '404':
+          description: Order not found
+
+  /orders/{orderId}/close:
+    post:
+      tags:
+        - Orders
+      summary: Close an order
+      description: Finalizes the order and processes payment(s)
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tipAmount:
+                  $ref: '#/components/schemas/Money'
+                discountId:
+                  type: integer
+                  nullable: true
+                payments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      amount:
+                        $ref: '#/components/schemas/Money'
+                      method:
+                        type: string
+                        enum: [Cash, CardDebit, CardCredit, GiftCard]
+                      employeeId:
+                        type: integer
+                      giftCardId:
+                        type: integer
+                        nullable: true
+                      tipPortion:
+                        $ref: '#/components/schemas/Money'
+                        nullable: true
+                    required: [amount, method, employeeId]
+              required: [payments]
+      responses:
+        '200':
+          description: Order closed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Validation error
+        '404':
+          description: Order not found
+
+  /orders/{orderId}/refund:
+    post:
+      tags:
+        - Orders
+      summary: Process a refund for a closed order
+      description: Creates a negative payment record for refunds
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  $ref: '#/components/schemas/Money'
+                method:
+                  type: string
+                  enum: [Cash, CardDebit, CardCredit, GiftCard]
+                employeeId:
+                  type: integer
+                giftCardId:
+                  type: integer
+                  nullable: true
+                reason:
+                  type: string
+              required: [amount, method, employeeId]
+      responses:
+        '200':
+          description: Refund processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid refund amount
+        '403':
+          description: Insufficient permissions
+        '404':
+          description: Order not found
+
+  # Reservations
+  /reservations:
+    post:
+      tags:
+        - Reservations
+      summary: Create a reservation
+      description: Books an appointment for a service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                catalogItemId:
+                  type: integer
+                employeeId:
+                  type: integer
+                  nullable: true
+                appointmentStart:
+                  type: string
+                  format: date-time
+                appointmentEnd:
+                  type: string
+                  format: date-time
+                plannedDurationMin:
+                  type: integer
+                notes:
+                  type: string
+                  nullable: true
+                tableOrArea:
+                  type: string
+                  nullable: true
+              required: [businessId, catalogItemId, appointmentStart, appointmentEnd, plannedDurationMin]
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '400':
+          description: Validation error
+
+    get:
+      tags:
+        - Reservations
+      summary: List reservations
+      description: Retrieve reservations with optional filtering
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: employeeId
+          in: query
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Booked, Cancelled, Completed]
+      responses:
+        '200':
+          description: List of reservations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reservation'
+
+  /reservations/{reservationId}:
+    get:
+      tags:
+        - Reservations
+      summary: Get reservation by ID
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Reservation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '404':
+          description: Reservation not found
+
+    patch:
+      tags:
+        - Reservations
+      summary: Modify a reservation
+      description: Update appointment time, employee, or notes
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                employeeId:
+                  type: integer
+                appointmentStart:
+                  type: string
+                  format: date-time
+                appointmentEnd:
+                  type: string
+                  format: date-time
+                plannedDurationMin:
+                  type: integer
+                notes:
+                  type: string
+                  nullable: true
+                tableOrArea:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Reservation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '400':
+          description: Validation error
+        '404':
+          description: Reservation not found
+
+    delete:
+      tags:
+        - Reservations
+      summary: Cancel a reservation
+      description: Marks reservation status as Cancelled
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Reservation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '404':
+          description: Reservation not found
+
+  # Gift Cards
+  /gift-cards:
+    get:
+      tags:
+        - Gift Cards
+      summary: List gift cards
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Active, Blocked, Expired]
+      responses:
+        '200':
+          description: List of gift cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GiftCard'
+
+    post:
+      tags:
+        - Gift Cards
+      summary: Issue a gift card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId:
+                  type: integer
+                code:
+                  type: string
+                initialValue:
+                  $ref: '#/components/schemas/Money'
+                expiresAt:
+                  type: string
+                  format: date-time
+              required: [businessId, code, initialValue, expiresAt]
+      responses:
+        '201':
+          description: Gift card created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftCard'
+        '400':
+          description: Validation error
+
+  /gift-cards/{giftCardId}:
+    get:
+      tags:
+        - Gift Cards
+      summary: Get gift card by ID
+      parameters:
+        - name: giftCardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Gift card details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftCard'
+        '404':
+          description: Gift card not found
+
+  /gift-cards/by-code/{code}:
+    get:
+      tags:
+        - Gift Cards
+      summary: Get gift card by code
+      description: Look up gift card by code to check balance
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Gift card details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftCard'
+        '404':
+          description: Gift card not found
+
+  /gift-cards/{giftCardId}/block:
+    post:
+      tags:
+        - Gift Cards
+      summary: Block a gift card
+      description: Changes status to Blocked
+      parameters:
+        - name: giftCardId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Gift card blocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GiftCard'
+        '404':
+          description: Gift card not found
