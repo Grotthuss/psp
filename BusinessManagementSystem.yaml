@@ -1,12 +1,12 @@
 openapi: 3.0.3
 info:
   title: Business Management System API
-  version: "2.0.0"
+  version: "1.0.0"
   description: |
     API contract for a unified point-of-sale and reservation management system
     designed for small and medium businesses in catering and beauty industries.
     
-    This API is strictly aligned 1:1 with the data model diagram.
+  
 
 security:
   - bearerAuth: []
@@ -1878,4 +1878,5 @@ paths:
               schema:
                 $ref: '#/components/schemas/GiftCard'
         '404':
+
           description: Gift card not found
